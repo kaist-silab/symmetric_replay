@@ -12,17 +12,18 @@ def symmetric_action(action, opts):
         permuted_indice = torch.arange(action_len).repeat(batch_size, 1)
         
         if opts.transform_opt == 'identical':
-            start = torch.ones(size=(batch_size, 1)).int() + 1
+            sym_action = action.flip(dims=[-1])
+            # start = torch.ones(size=(batch_size, 1)).int() + 1
         else:
             start = torch.randint(action_len - 1, size=(batch_size, 1)) + 1
         
-        random_permuted = (permuted_indice + start) % action_len
-        permuted = torch.gather(action, dim=-1, index=random_permuted.to(opts.device))
-        
-        if torch.rand(1) >= 0.5:
-            sym_action = permuted
-        else:  # flipping
-            sym_action = permuted.flip(dims=[-1])
+            random_permuted = (permuted_indice + start) % action_len
+            permuted = torch.gather(action, dim=-1, index=random_permuted.to(opts.device))
+            
+            if torch.rand(1) >= 0.5:
+                sym_action = permuted
+            else:  # flipping
+                sym_action = permuted.flip(dims=[-1])
 
     elif opts.problem == 'cvrp':
         # action does not start with 0

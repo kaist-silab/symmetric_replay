@@ -23,6 +23,7 @@ pip install -r requirements.txt
 **Note**
 - We highly recommend using Python 3.7, PyTorch 1.12.1, and Pytorch Geometric 1.7.2. Additionally, we use PyTDC 0.4.0 instead of 0.3.6, which is recommended in mol_opt. 
 - If you use the different cuda version, please modify the url for `torch-scatter` and `torch-sparse` in `requirements.txt` before run it; see [here](https://pytorch-geometric.readthedocs.io/en/1.7.2/notes/installation.html).
+- If you have any problems to install `torch-scatter` and `torch-sparse`, try `conda install pyg -c pyg`.
 - We slightly modified the original codes of AM and Sym-NCO to make them runable in Python 3.7 according to [here](https://github.com/wouterkool/attention-learn-to-route/issues/26).
 
 

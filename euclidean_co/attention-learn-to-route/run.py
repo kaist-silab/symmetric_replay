@@ -3,6 +3,9 @@
 import os
 import json
 import pprint as pp
+import wandb
+import random
+import numpy
 
 import torch
 import torch.optim as optim
@@ -18,18 +21,31 @@ from utils import torch_load_cpu, load_problem
 
 
 def run(opts):
-    assert opts.distil_every >= opts.il_coefficient, "Do not use distil_every 0 when il_coefficient > 0"
-
+    
     # Pretty print the run args
     pp.pprint(vars(opts))
 
     # Set the random seed
     torch.manual_seed(opts.seed)
+    random.seed(opts.seed)
+    numpy.random.seed(opts.seed)
 
     # Optionally configure tensorboard
     tb_logger = None
-    if not opts.no_tensorboard:
-        tb_logger = TbLogger(os.path.join(opts.log_dir, "{}_{}".format(opts.problem, opts.graph_size), opts.run_name))
+    # disable tb_logger
+    # if not opts.no_tensorboard:
+    #     tb_logger = TbLogger(os.path.join(opts.log_dir, "{}_{}".format(opts.problem, opts.graph_size), opts.run_name))
+
+    if opts.wandb != 'disabled':
+        if opts.il_coefficient > 0:
+            run_name = 'symrd_' + opts.method + '_' + opts.baseline + '_' + str(opts.seed)
+        else:
+            run_name = opts.method + '_' + opts.baseline + '_' + str(opts.seed)
+        wandb.init(project='symrd_euclidean', 
+                    entity='hyeonah_kim',
+                    group=opts.method,
+                    name=run_name,
+                    config=opts)
 
     os.makedirs(opts.save_dir)
     # Save arguments so exact configuration can always be found
@@ -175,6 +191,9 @@ def run(opts):
                 tb_logger,
                 opts
             )
+
+    if opts.wandb != 'disabled':
+        wandb.finish()
 
 
 if __name__ == "__main__":

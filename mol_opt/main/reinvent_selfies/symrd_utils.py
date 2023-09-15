@@ -9,6 +9,14 @@ def seq_to_selfies(seqs, voc):
     return selfies_list 
 
 
+def selfies_to_seq(selfies, voc):
+    tokenized = voc.tokenize(selfies)
+    seq = []
+    for char in tokenized:
+        seq.append(voc.vocab[char])
+    return torch.tensor(seq).float().cuda()
+
+
 def make_symmetric_selfies(seqs, voc):
     padded_len = seqs.shape[1]
     selfies_list = seq_to_selfies(seqs, voc)
@@ -27,6 +35,7 @@ def make_symmetric_selfies(seqs, voc):
 
             new_seq = selfies_to_seq(new_selfies, voc)
             new_seq = torch.cat([new_seq, torch.zeros(padded_len-len(new_seq)).cuda()], dim=0)
+
         except:
             new_seq = seqs[i]
             new_selfies = selfies

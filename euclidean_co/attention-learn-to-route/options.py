@@ -28,6 +28,19 @@ def get_options(args=None):
                              'Set to 0 to not perform any clipping.')
     parser.add_argument('--normalization', default='batch', help="Normalization type, 'batch' (default) or 'instance'")
 
+    # RL methods
+    parser.add_argument('--method', default='pg')
+
+    # PPO
+    parser.add_argument('--eps_clip', type=float, default=0.2)
+
+    # GFN
+    parser.add_argument('--beta', type=float, default=10.)
+    
+    # inner loop training (PPO & GFN)
+    parser.add_argument('--k_step', type=int, default=2, help='Number of instances per epoch during training')
+
+
     # Training
     parser.add_argument('--lr_model', type=float, default=1e-4, help="Set the learning rate for the actor network")
     parser.add_argument('--lr_critic', type=float, default=1e-4, help="Set the learning rate for the critic network")
@@ -73,11 +86,14 @@ def get_options(args=None):
 
     ############################### [SymRD] ###################################
     parser.add_argument('--il_coefficient', type=float, default=0., help='> 0 to use Self-distillation')
-    parser.add_argument('--distil_every', type=int, default=0, help='default 0, no distillation')
+    parser.add_argument('--distil_every', type=int, default=1, help='default 1')
+    parser.add_argument('--distil_loop', type=int, default=1, help='default 1')
     parser.add_argument('--no_symmetric', action='store_true')
     parser.add_argument('--transform_opt', default='uniform', help="Symmetric transform, 'uniform' (default) or 'identical'")
     parser.add_argument('--sym_width', type=int, default=1, help='Symmetric width, default 1')
     ###########################################################################
+
+    parser.add_argument('--wandb', type=str, default="disabled", choices=["online", "offline", "disabled"])
 
     opts = parser.parse_args(args)
 

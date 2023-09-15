@@ -1,10 +1,12 @@
 import os
 import time
-from tqdm import tqdm
-import torch
 import math
 import random
 
+import wandb
+from tqdm import tqdm
+
+import torch
 from torch.utils.data import DataLoader
 from torch.nn import DataParallel
 
@@ -86,8 +88,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     
     start_time = time.time()
 
-    if not opts.no_tensorboard:
-        tb_logger.log_value('learnrate_pg0', optimizer.param_groups[0]['lr'], step)
+    # if not opts.no_tensorboard:
+    #     tb_logger.log_value('learnrate_pg0', optimizer.param_groups[0]['lr'], step)
 
     # Generate new training data for each epoch
     training_dataset = baseline.wrap_dataset(problem.make_dataset(
@@ -110,18 +112,46 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
                 cum_samples += opts.batch_size  # batch['data'].shape[0]
         ###########################################################################
 
-        train_batch(
-            model,
-            optimizer,
-            baseline,
-            epoch,
-            batch_id,
-            step,
-            batch,
-            tb_logger,
-            cum_samples,
-            opts
-        )
+
+        if opts.method == 'gfn':
+            train_batch_gfn(
+                model,
+                optimizer,
+                baseline,
+                epoch,
+                batch_id,
+                step,
+                batch,
+                tb_logger,
+                cum_samples,
+                opts
+            )
+        elif opts.method == 'ppo':
+            train_batch_ppo(
+                model,
+                optimizer,
+                baseline,
+                epoch,
+                batch_id,
+                step,
+                batch,
+                tb_logger,
+                cum_samples,
+                opts
+            )
+        else:
+            train_batch(
+                model,
+                optimizer,
+                baseline,
+                epoch,
+                batch_id,
+                step,
+                batch,
+                tb_logger,
+                cum_samples,
+                opts
+            )
 
         step += 1
 
@@ -143,14 +173,61 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     avg_reward = validate(model, val_dataset, opts)
 
-    if not opts.no_tensorboard:
-        print("{} samples are used.".format(cum_samples))
-        tb_logger.log_value('val_avg_reward', avg_reward, step)
+    if opts.wandb != 'disabled':
+        wandb_log_dict = {'val_avg_cost': avg_reward,
+                          'cum_samples': cum_samples,
+                          'step': step}
+
+        wandb.log(wandb_log_dict)
+
+    # if not opts.no_tensorboard:
+    #     print("{} samples are used.".format(cum_samples))
+    #     tb_logger.log_value('val_avg_reward', avg_reward, step)
 
     baseline.epoch_callback(model, epoch)
 
     # lr_scheduler should be called at end of epoch
     lr_scheduler.step()
+
+
+def distill_model(model, optimizer, opts, x, pi=None):
+    if pi is None:
+        new_pi = rollout_for_self_distillation(model, opts, x)
+    else:
+        new_pi = pi.clone()
+    
+    for _ in range(opts.distil_loop):
+        sub_len = random.randint(1, 10)
+
+        if opts.no_symmetric:
+            _, _, _, log_likelihood_IL, _ = model(x, action=new_pi, sub_len=opts.graph_size - sub_len)
+        else:
+            if opts.problem == 'tsp':
+                new_x = x.repeat(opts.sym_width, 1, 1)
+                action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts)
+
+            elif opts.problem == 'cvrp':
+                new_x = {
+                    'loc': x['loc'].repeat(opts.sym_width, 1, 1),
+                    'demand': x['demand'].repeat(opts.sym_width, 1),
+                    'depot': x['depot'].repeat(opts.sym_width, 1)
+                }
+
+                new_x = x.repeat(opts.sym_width, 1, 1)
+                action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts)
+            
+            _, _, _, log_likelihood_IL, _ = model(new_x, action=action, sub_len=opts.graph_size - sub_len)
+
+        il_loss = (-1) * opts.il_coefficient * log_likelihood_IL.mean()
+        
+        optimizer.zero_grad()
+        il_loss.backward()
+
+        # Clip gradient norms and get (clipped) gradient norms for logging
+        grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
+        optimizer.step()
+
+    return il_loss
 
 
 def train_batch(
@@ -189,49 +266,171 @@ def train_batch(
     optimizer.step()
 
     ############################### [SymRD] ###################################
-    if opts.distil_every > 0 and (step + 1) % opts.distil_every == 0:
-        new_pi = rollout_for_self_distillation(model, opts, x)
+    if opts.il_coefficient > 0 and (step + 1) % opts.distil_every == 0:
+        distill_loss = distill_model(model, optimizer, opts, x)
+        # new_pi = rollout_for_self_distillation(model, opts, x)
     
-        sub_len = random.randint(1, 10)
+        # sub_len = random.randint(1, 10)
 
-        if opts.no_symmetric:
-            _, _, _, log_likelihood_IL, _ = model(x, action=new_pi, sub_len=opts.graph_size - sub_len)
-        else:
-            if opts.problem == 'tsp':
-                new_x = x.repeat(opts.sym_width, 1, 1)
+        # if opts.no_symmetric:
+        #     _, _, _, log_likelihood_IL, _ = model(x, action=new_pi, sub_len=opts.graph_size - sub_len)
+        # else:
+        #     if opts.problem == 'tsp':
+        #         new_x = x.repeat(opts.sym_width, 1, 1)
+        #         action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts)
+
+        #     elif opts.problem == 'cvrp':
+        #         new_x = {
+        #             'loc': x['loc'].repeat(opts.sym_width, 1, 1),
+        #             'demand': x['demand'].repeat(opts.sym_width, 1),
+        #             'depot': x['depot'].repeat(opts.sym_width, 1)
+        #         }
+
+        #         new_x = x.repeat(opts.sym_width, 1, 1)
+        #         action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts)
             
-                if opts.transform_opt == 'identical':
-                    action = symmetric_action(new_pi, opts).repeat(opts.sym_width, 1)
-                elif opts.transform_opt == 'uniform':
-                    action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts)
-                else:
-                    raise NotImplementedError("Available options for tranform_opt are 'uniform (default)' and 'identical'")
-            elif opts.problem == 'cvrp':
-                new_x = {
-                    'loc': x['loc'].repeat(opts.sym_width, 1, 1),
-                    'demand': x['demand'].repeat(opts.sym_width, 1),
-                    'depot': x['depot'].repeat(opts.sym_width, 1)
-                }
+        #     _, _, _, log_likelihood_IL, _ = model(new_x, action=action, sub_len=opts.graph_size - sub_len)
 
-                if opts.transform_opt != 'uniform':
-                    raise NotImplementedError("In AM for CVRP, use 'uniform' transformation only")
-                
-                new_x = x.repeat(opts.sym_width, 1, 1)
-                action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts)
-            
-            _, _, _, log_likelihood_IL, _ = model(new_x, action=action, sub_len=opts.graph_size - sub_len)
+        # il_loss = (-1) * opts.il_coefficient * log_likelihood_IL.mean()
+        
+        # optimizer.zero_grad()
+        # il_loss.backward()
 
-        il_loss = (-1) * opts.il_coefficient * log_likelihood_IL.mean()
+        # # Clip gradient norms and get (clipped) gradient norms for logging
+        # grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
+        # optimizer.step()
+
+    wandb_log_dict = {'avg_cost': cost.mean().item(),
+                    'cum_samples': cum_samples,
+                    'rl_loss': reinforce_loss.item(),
+                    'il_loss': distill_loss.item() if opts.il_coefficient > 0 else 0, 
+                    'nll': -log_likelihood.mean().item(),
+                    'epoch': epoch,
+                    'lr': optimizer.param_groups[0]['lr'],
+                    'step': step}
+
+    # Logging
+    if opts.wandb != 'disabled':
+        wandb.log(wandb_log_dict)
+
+
+def train_batch_ppo(
+        model,
+        optimizer,
+        baseline,
+        epoch,
+        batch_id,
+        step,
+        batch,
+        tb_logger,
+        cum_samples,
+        opts
+):
+    x, bl_val = baseline.unwrap_batch(batch)
+    x = move_to(x, opts.device)
+    bl_val = move_to(bl_val, opts.device) if bl_val is not None else None
+
+    # Exploration
+    with torch.no_grad():
+        cost, log_likelihood_old,pi = model(x,return_pi = True)
+    # cost, log_likelihood, entropy = model(x, return_entropy=True)  # MaxEnt AM
+
+    # Evaluate baseline, get baseline loss if any (only for critic)
+
+
+    for i in range(opts.k_step):
+        bl_val, bl_loss = baseline.eval(x, cost) if bl_val is None else (bl_val, 0)
+
+        _, log_likelihood = model(x,action=pi)
+        # Perform backward pass and optimization step
+        
+        advantage = bl_val - cost
+        ratio = log_likelihood - log_likelihood_old
+
+        surr1 = ratio *  advantage
+        surr2 = torch.clamp(ratio, 1-opts.eps_clip, 1+opts.eps_clip) * advantage
+        
+        reinforce_loss = -torch.min(surr1,surr2).mean()
+        loss = reinforce_loss + bl_loss
         
         optimizer.zero_grad()
-        il_loss.backward()
+        loss.backward()
+        # Clip gradient norms and get (clipped) gradient norms for logging
+        grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
+        optimizer.step()
+
+    ############################### [SymRD] ###################################
+    if opts.il_coefficient > 0 and (step + 1) % opts.distil_every == 0:
+        distill_loss = distill_model(model, optimizer, opts, x)
+
+    wandb_log_dict = {'avg_cost': cost.mean().item(),
+                    'cum_samples': cum_samples,
+                    'rl_loss': reinforce_loss.item(),
+                    'il_loss': distill_loss.item() if opts.il_coefficient > 0 else 0, 
+                    'nll': -log_likelihood.mean().item(),
+                    'epoch': epoch,
+                    'lr': optimizer.param_groups[0]['lr'],
+                    'step': step}
+
+    # Logging
+    if opts.wandb != 'disabled':
+        wandb.log(wandb_log_dict)
+
+
+def train_batch_gfn(
+        model,
+        optimizer,
+        baseline,
+        epoch,
+        batch_id,
+        step,
+        batch,
+        tb_logger,
+        cum_samples,
+        opts
+):
+    x, bl_val = baseline.unwrap_batch(batch)
+    x = move_to(x, opts.device)
+    bl_val = move_to(bl_val, opts.device) if bl_val is not None else None
+
+    # Evaluate model, get costs and log probabilities
+    
+    # Exploration 
+    with torch.no_grad():
+        cost, _, pi = model(x, return_pi=True)
+
+    # Training
+    for i in range(opts.k_step):
+        bl_val, bl_loss = baseline.eval(x, cost) if bl_val is None else (bl_val, 0)
+
+        _, log_likelihood,logZ = model(x,action=pi,gfn=True)
+
+        forward_flow = log_likelihood + logZ.view(-1)
+        backward_flow = math.log(1/(2*pi.shape[0])) - (cost-bl_val)*opts.beta
+        
+        reinforce_loss = torch.pow(forward_flow-backward_flow,2).mean()
+        loss = reinforce_loss + bl_loss
+
+        optimizer.zero_grad()
+        loss.backward()
 
         # Clip gradient norms and get (clipped) gradient norms for logging
         grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
         optimizer.step()
 
+    ############################### [SymRD] ###################################
+    if opts.il_coefficient > 0 and (step + 1) % opts.distil_every == 0:
+        distill_loss = distill_model(model, optimizer, opts, x)
+
+    wandb_log_dict = {'avg_cost': cost.mean().item(),
+                    'cum_samples': cum_samples,
+                    'rl_loss': reinforce_loss.item(),
+                    'il_loss': distill_loss.item() if opts.il_coefficient > 0 else 0, 
+                    'nll': -log_likelihood.mean().item(),
+                    'epoch': epoch,
+                    'lr': optimizer.param_groups[0]['lr'],
+                    'step': step}
+
     # Logging
-    if step % int(opts.log_step) == 0:
-        print("{} samples are used.".format(cum_samples))
-        log_values(cost, grad_norms, epoch, batch_id, step,
-                   log_likelihood, reinforce_loss, bl_loss, tb_logger, opts)
+    if opts.wandb != 'disabled':
+        wandb.log(wandb_log_dict)

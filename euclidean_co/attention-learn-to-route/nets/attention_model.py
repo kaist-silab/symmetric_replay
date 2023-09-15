@@ -109,6 +109,12 @@ class AttentionModel(nn.Module):
             normalization=normalization
         )
 
+        self.Z = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim),
+            nn.ReLU(),
+            nn.Linear(embedding_dim, 1),
+        )
+
         # For each node we compute (glimpse key, glimpse value, logit key) so 3 * embedding_dim
         self.project_node_embeddings = nn.Linear(embedding_dim, 3 * embedding_dim, bias=False)
         self.project_fixed_context = nn.Linear(embedding_dim, embedding_dim, bias=False)
@@ -122,7 +128,7 @@ class AttentionModel(nn.Module):
         if temp is not None:  # Do not change temperature if not provided
             self.temp = temp
 
-    def forward(self, input, return_pi=False, action=None, sub_len=0, return_entropy=False):
+    def forward(self, input, return_pi=False, action=None, sub_len=0, return_entropy=False,gfn=False):
         """
         :param input: (batch_size, graph_size, node_dim) input node features or dictionary with multiple tensors
         :param return_pi: whether to return the output sequences, this is optional as it is not compatible with
@@ -135,12 +141,14 @@ class AttentionModel(nn.Module):
         else:
             embeddings, _ = self.embedder(self._init_embed(input))
 
+        if gfn:
+            logZ = self.Z(embeddings).mean(dim=1)
+        
+
         ############################### [SymRD] ###################################
         # _log_p, pi = self._inner(input, embeddings)
-        if return_entropy:
-            _log_p, pi, entropy = self._inner(input, embeddings,action, return_entropy=True)
-        else:
-            _log_p, pi = self._inner(input, embeddings,action)
+
+        _log_p, pi = self._inner(input, embeddings,action)
 
         if action is not None:
             if sub_len > 0:
@@ -151,9 +159,15 @@ class AttentionModel(nn.Module):
                 sub_ll_1, sub_ll_2 = self._calc_log_likelihood_sub(_log_p, action, None, action.shape[1] - sub_len)
                 return cost, _, sub_ll_1, sub_ll_2, action
             else:
-                ll = self._calc_log_likelihood(_log_p, action, None)
-                cost = 0
-                return cost, ll
+                
+                if gfn:
+                    ll = self._calc_log_likelihood(_log_p, action, None)
+                    cost = 0
+                    return cost, ll, logZ   
+                else:
+                    ll = self._calc_log_likelihood(_log_p, action, None)
+                    cost = 0
+                    return cost, ll            
         #############################################################################
 
         cost, mask = self.problem.get_costs(input, pi)

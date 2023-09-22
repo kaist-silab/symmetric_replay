@@ -130,9 +130,12 @@ dmypy.json
 
 # checkpoints
 euclidean_co/attention-learn-to-route/outputs
+euclidean_co/attention-learn-to-route/wandb
 euclidean_co/sym_nco/outputs/
 euclidean_co/pomo/TSP/POMO/result/
 euclidean_co/pomo/CVRP/POMO/result/
+euclidean_co/pomo/TSP/POMO/wandb
+euclidean_co/pomo/CVRP/POMO/wandb
 non_euclidean_co/mat_net/ATSP/ATSP_MatNet/result/
 non_euclidean_co/mat_net/FFSP/FFSP_MatNet/result/
 non_euclidean_co/mat_net/ATSP/data/
@@ -140,3 +143,5 @@ non_euclidean_co/mat_net/FFSP/data/
 non_euclidean_co/mat_net/ATSP/wandb/
 non_euclidean_co/mat_net/FFSP/wandb/
 mol_opt/oracle
+hardware_opt/devformer/outputs
+hardware_opt/devformer/wandb

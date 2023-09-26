@@ -1,10 +1,6 @@
-# SymRD: Symmetric Exploration in CO is Free!
+# SymRD: Enhancing Sample Efficiency in Black-box Combinatorial Optimization via Symmetric Explorations
 
 This reporsitory provided implemented codes for the paper, SymRD. 
-> Symmetric Exploration in Combinatorial Optimization is Free!
-> 
-> [https://arxiv.org/abs/2306.01276](https://arxiv.org/abs/2306.01276)
-
 The codes are implemented based on the original DRL methods for each task; see the references and original codes for details.
 
 

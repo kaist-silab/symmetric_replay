@@ -119,6 +119,8 @@ def run(opts):
         )
     elif opts.baseline == 'rollout':
         baseline = RolloutBaseline(model, problem, opts)
+    elif opts.baseline == 'no_baseline':
+        baseline = NoBaseline()
     else:
         assert opts.baseline is None, "Unknown baseline: {}".format(opts.baseline)
         baseline = NoBaseline()

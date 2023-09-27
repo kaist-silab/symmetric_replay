@@ -79,9 +79,9 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     random.seed(opts.seed)
 
     if opts.baseline == 'rollout':
-        cum_samples = epoch * (opts.epoch_size + opts.val_size)  # rollout baseline 
-        if epoch > 0:
-            cum_samples += opts.epoch_size 
+        cum_samples = epoch * (2*opts.epoch_size + opts.val_size)  # rollout baseline 
+        # if epoch > 0:
+        #     cum_samples += opts.epoch_size 
     else:
         cum_samples = epoch * opts.epoch_size
     ###########################################################################
@@ -103,7 +103,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     for batch_id, batch in enumerate(tqdm(training_dataloader, disable=opts.no_progress_bar)):
 
         ############################### [SymRD] ###################################
-        if opts.baseline is None or opts.baseline == 'critic':
+        if opts.baseline is None or opts.baseline in ['critic', 'no_baseline']:
             cum_samples += opts.batch_size  # batch.shape[0]
         elif opts.baseline == 'rollout':
             if epoch == 0:
@@ -190,7 +190,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     lr_scheduler.step()
 
 
-def distill_model(model, optimizer, opts, x, pi=None):
+def distill_model(model, optimizer, opts, x, pi=None, ll_clip=0.):
     if pi is None:
         new_pi = rollout_for_self_distillation(model, opts, x)
     else:
@@ -217,6 +217,9 @@ def distill_model(model, optimizer, opts, x, pi=None):
                 action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts)
             
             _, _, _, log_likelihood_IL, _ = model(new_x, action=action, sub_len=opts.graph_size - sub_len)
+
+        if ll_clip > 0:
+            log_likelihood_IL = torch.clamp(log_likelihood_IL, -ll_clip, ll_clip)
 
         il_loss = (-1) * opts.il_coefficient * log_likelihood_IL.mean()
         
@@ -268,42 +271,13 @@ def train_batch(
     ############################### [SymRD] ###################################
     if opts.il_coefficient > 0 and (step + 1) % opts.distil_every == 0:
         distill_loss = distill_model(model, optimizer, opts, x)
-        # new_pi = rollout_for_self_distillation(model, opts, x)
-    
-        # sub_len = random.randint(1, 10)
-
-        # if opts.no_symmetric:
-        #     _, _, _, log_likelihood_IL, _ = model(x, action=new_pi, sub_len=opts.graph_size - sub_len)
-        # else:
-        #     if opts.problem == 'tsp':
-        #         new_x = x.repeat(opts.sym_width, 1, 1)
-        #         action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts)
-
-        #     elif opts.problem == 'cvrp':
-        #         new_x = {
-        #             'loc': x['loc'].repeat(opts.sym_width, 1, 1),
-        #             'demand': x['demand'].repeat(opts.sym_width, 1),
-        #             'depot': x['depot'].repeat(opts.sym_width, 1)
-        #         }
-
-        #         new_x = x.repeat(opts.sym_width, 1, 1)
-        #         action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts)
-            
-        #     _, _, _, log_likelihood_IL, _ = model(new_x, action=action, sub_len=opts.graph_size - sub_len)
-
-        # il_loss = (-1) * opts.il_coefficient * log_likelihood_IL.mean()
-        
-        # optimizer.zero_grad()
-        # il_loss.backward()
-
-        # # Clip gradient norms and get (clipped) gradient norms for logging
-        # grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
-        # optimizer.step()
+    else:
+        distill_loss = 0
 
     wandb_log_dict = {'avg_cost': cost.mean().item(),
                     'cum_samples': cum_samples,
                     'rl_loss': reinforce_loss.item(),
-                    'il_loss': distill_loss.item() if opts.il_coefficient > 0 else 0, 
+                    'il_loss': distill_loss, 
                     'nll': -log_likelihood.mean().item(),
                     'epoch': epoch,
                     'lr': optimizer.param_groups[0]['lr'],
@@ -347,7 +321,7 @@ def train_batch_ppo(
         advantage = bl_val - cost
         ratio = log_likelihood - log_likelihood_old
 
-        surr1 = ratio *  advantage
+        surr1 = ratio * advantage
         surr2 = torch.clamp(ratio, 1-opts.eps_clip, 1+opts.eps_clip) * advantage
         
         reinforce_loss = -torch.min(surr1,surr2).mean()
@@ -361,12 +335,14 @@ def train_batch_ppo(
 
     ############################### [SymRD] ###################################
     if opts.il_coefficient > 0 and (step + 1) % opts.distil_every == 0:
-        distill_loss = distill_model(model, optimizer, opts, x)
+        distill_loss = distill_model(model, optimizer, opts, x, ll_clip=ratio.mean().item())
+    else:
+        distill_loss = 0
 
     wandb_log_dict = {'avg_cost': cost.mean().item(),
                     'cum_samples': cum_samples,
                     'rl_loss': reinforce_loss.item(),
-                    'il_loss': distill_loss.item() if opts.il_coefficient > 0 else 0, 
+                    'il_loss': distill_loss, 
                     'nll': -log_likelihood.mean().item(),
                     'epoch': epoch,
                     'lr': optimizer.param_groups[0]['lr'],
@@ -408,7 +384,7 @@ def train_batch_gfn(
         forward_flow = log_likelihood + logZ.view(-1)
         backward_flow = math.log(1/(2*pi.shape[0])) - (cost-bl_val)*opts.beta
         
-        reinforce_loss = torch.pow(forward_flow-backward_flow,2).mean()
+        reinforce_loss = torch.pow(forward_flow-backward_flow, 2).mean()
         loss = reinforce_loss + bl_loss
 
         optimizer.zero_grad()
@@ -421,11 +397,13 @@ def train_batch_gfn(
     ############################### [SymRD] ###################################
     if opts.il_coefficient > 0 and (step + 1) % opts.distil_every == 0:
         distill_loss = distill_model(model, optimizer, opts, x)
+    else:
+        distill_loss = 0
 
     wandb_log_dict = {'avg_cost': cost.mean().item(),
                     'cum_samples': cum_samples,
                     'rl_loss': reinforce_loss.item(),
-                    'il_loss': distill_loss.item() if opts.il_coefficient > 0 else 0, 
+                    'il_loss': distill_loss, 
                     'nll': -log_likelihood.mean().item(),
                     'epoch': epoch,
                     'lr': optimizer.param_groups[0]['lr'],

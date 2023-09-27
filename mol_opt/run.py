@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--log_results', action='store_true')
     parser.add_argument('--log_code', action='store_true')
     parser.add_argument('--wandb', type=str, default="disabled", choices=["online", "offline", "disabled"])
+    parser.add_argument('--run_name', type=str, default="default")
     args = parser.parse_args()
 
     os.environ["WANDB_MODE"] = args.wandb

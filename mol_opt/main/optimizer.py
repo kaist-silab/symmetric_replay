@@ -128,20 +128,22 @@ class Oracle:
                 f'avg_sa: {avg_sa:.3f} | '
                 f'div: {diversity_top100:.3f}')
 
-        # try:
-        wandb.log({
-            "avg_top1": avg_top1, 
-            "avg_top10": avg_top10, 
-            "avg_top100": avg_top100, 
-            "auc_top1": top_auc(self.mol_buffer, 1, finish, self.freq_log, self.max_oracle_calls),
-            "auc_top10": top_auc(self.mol_buffer, 10, finish, self.freq_log, self.max_oracle_calls),
-            "auc_top100": top_auc(self.mol_buffer, 100, finish, self.freq_log, self.max_oracle_calls),
-            "avg_sa": avg_sa,
-            "diversity_top100": diversity_top100,
-            "n_oracle": n_calls,
-            # "best_mol": wandb.Image(Draw.MolsToGridImage([Chem.MolFromSmiles(item[0]) for item in temp_top10], 
-            #           molsPerRow=5, subImgSize=(200,200), legends=[f"f = {item[1][0]:.3f}, #oracle = {item[1][1]}" for item in temp_top10]))
-        })
+        try:
+            wandb.log({
+                "avg_top1": avg_top1, 
+                "avg_top10": avg_top10, 
+                "avg_top100": avg_top100, 
+                "auc_top1": top_auc(self.mol_buffer, 1, finish, self.freq_log, self.max_oracle_calls),
+                "auc_top10": top_auc(self.mol_buffer, 10, finish, self.freq_log, self.max_oracle_calls),
+                "auc_top100": top_auc(self.mol_buffer, 100, finish, self.freq_log, self.max_oracle_calls),
+                "avg_sa": avg_sa,
+                "diversity_top100": diversity_top100,
+                "n_oracle": n_calls,
+                # "best_mol": wandb.Image(Draw.MolsToGridImage([Chem.MolFromSmiles(item[0]) for item in temp_top10], 
+                #           molsPerRow=5, subImgSize=(200,200), legends=[f"f = {item[1][0]:.3f}, #oracle = {item[1][1]}" for item in temp_top10]))
+            })
+        except:
+            pass
 
 
     def __len__(self):
@@ -342,8 +344,11 @@ class BaseOptimizer:
         wandb.agent(sweep_id, function=_func, count=count, entity="mol_opt")
         
     def optimize(self, oracle, config, seed=0, project="test"):
-        run = wandb.init(project=project, config=config, reinit=True, entity="mol_opt")
-        wandb.run.name = self.model_name + "_" + oracle.name + "_" + wandb.run.id
+        # run = wandb.init(project=project, config=config, reinit=True, entity="mol_opt")
+        if self.args.wandb != 'disabled':
+            run = wandb.init(project='symrd', group=oracle.name, config=config, reinit=True)
+            wandb.run.name = oracle.name + "_" + self.args.run_name + "_" + str(seed) + "_" + wandb.run.id
+        # wandb.run.name = self.model_name + "_" + oracle.name + "_" + wandb.run.id
         np.random.seed(seed)
         torch.manual_seed(seed)
         random.seed(seed)

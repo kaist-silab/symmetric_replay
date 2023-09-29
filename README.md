@@ -1,6 +1,6 @@
-# SymRD: Enhancing Sample Efficiency in Black-box Combinatorial Optimization via Symmetric Explorations
+# Enhancing Sample Efficiency in Black-box Combinatorial Optimization via Symmetric Replay Training
 
-This reporsitory provided implemented codes for the paper, SymRD. 
+This reporsitory provided implemented codes for the paper, Enhancing Sample Efficiency in Black-box Combinatorial Optimization via Symmetric Replay Training. 
 The codes are implemented based on the original DRL methods for each task; see the references and original codes for details.
 
 
@@ -8,8 +8,8 @@ The codes are implemented based on the original DRL methods for each task; see t
 
 Clone project and create environment with conda:
 ```
-conda create -n sym_rd python==3.7
-conda activate sym_rd
+conda create -n sym python==3.7
+conda activate sym
 
 conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3 -c pytorch
 conda install -c rdkit rdkit

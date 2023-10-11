@@ -27,7 +27,7 @@ pip install -r requirements.txt
 ## Usage
 We have followed the original (base) source codes.
 ### Euclidean CO
-#### SymRD
+#### Symmetric Replay Training
 TSP (base: AM)
 ```
 cd attention-learn-to-route
@@ -81,7 +81,7 @@ Please change the configuration `USE_POMO` as `True` in `train.py` to run the or
 ---
 
 ### MolOpt
-SymRD with REINVENT-SELFIES
+Symmetric Replay Training
 ```
 cd mol_opt
 python run.py reinvent_selfies --task simple --oracle scaffold_hop --config_default 'hparams_symrd.yaml'

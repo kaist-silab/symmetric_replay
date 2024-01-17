@@ -10,6 +10,8 @@ from model import RNN
 from data_structs import Vocabulary, Experience
 import torch
 
+from symrd_utils import make_symmetric_trj
+
 
 class REINVENT_Optimizer(BaseOptimizer):
 
@@ -124,6 +126,27 @@ class REINVENT_Optimizer(BaseOptimizer):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
+            ################################ [SymRD] ###################################
+            if config['distil_every'] > 0 and (step + 1) % config['distil_every'] == 0 and len(experience) > config['distil_size']:
+                for _ in range(config['distil_loop']):
+                    if config['sampling'] == 'topk':
+                        exp_seqs, _, exp_prior_likelihood = experience.topk_selfies(config['distil_size'])
+                    elif config['sampling'] == 'reward_prioritized':
+                        exp_seqs, _, exp_prior_likelihood = experience.sample(config['distil_size'])
+
+                    if config['symmetric_distil']:
+                        exp_seqs = make_symmetric_trj(exp_seqs, voc, config['do_random'])
+
+                    exp_agent_likelihood, exp_entropy = Agent.likelihood(exp_seqs.long())
+                    distil_loss = (-1) * config['distil_coefficient'] * exp_agent_likelihood.mean()
+                    print(distil_loss)
+
+                    # Calculate gradients and make an update to the network weights
+                    optimizer.zero_grad()
+                    distil_loss.backward()
+                    optimizer.step()
+            ###############################################################################
 
             # Convert to numpy arrays so that we can print them
             augmented_likelihood = augmented_likelihood.data.cpu().numpy()

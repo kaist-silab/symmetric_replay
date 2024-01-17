@@ -9,4 +9,4 @@ distil_size: 24
 distil_loop: 1
 symmetric_distil: True
 sampling: 'reward_prioritized'
-do_random: False
+do_random: True

@@ -205,7 +205,7 @@ def distill_model(model, optimizer, opts, x, pi=None, ll_clip=0.):
         else:
             if opts.problem == 'tsp':
                 new_x = x.repeat(opts.sym_width, 1, 1)
-                action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts, x, model)
+                action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts, new_x, model)
 
             elif opts.problem == 'cvrp':
                 new_x = {

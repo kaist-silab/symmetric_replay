@@ -21,10 +21,17 @@ def symmetric_action(action, opts, x=None, model=None):
             # print(log_p1[0, 0, :].argmin(), log_p1[0, 0, :].argmax(), log_p1[0, 0, :].min(), log_p1[0, 0, :].max())
             # print(action[0])
             # print(log_p1[0, 0, action[0, 0]])
-            sym_action = action.flip(dims=[-1])
-            start = log_p1[:, 0, :].argmin(dim=-1).view(-1, 1)
+            # sym_action = action.flip(dims=[-1])
+            start_prob = ((-log_p1[:, 0, :]).exp() / (-log_p1[:, 0, :]).exp().sum(dim=1)[:, None])
+            start = torch.multinomial(start_prob,1)
+            # start = log_p1[:, 0, :].argmin(dim=-1).view(-1, 1)
             permuted = (permuted_indice + start) % action_len
             permuted = torch.gather(action, dim=-1, index=permuted.to(opts.device))
+            
+            if torch.rand(1) >= 0.5:
+                sym_action = permuted
+            else:  # flipping
+                sym_action = permuted.flip(dims=[-1])
             # print(permuted[0])
         else:
             start = torch.randint(action_len - 1, size=(batch_size, 1)) + 1

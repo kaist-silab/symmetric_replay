@@ -159,7 +159,7 @@ class REINVENT_SELFIES_Optimizer(BaseOptimizer):
                         exp_seqs, _, _ = Agent.sample(config['batch_size'], greedy=True)
 
                     if config['symmetric_distil']:
-                        exp_seqs = make_symmetric_selfies(exp_seqs, voc)
+                        exp_seqs = make_symmetric_selfies(exp_seqs, voc, config['do_random'])
 
                     exp_agent_likelihood, exp_entropy = Agent.likelihood(exp_seqs.long())
                     distil_loss = (-1) * config['distil_coefficient'] * exp_agent_likelihood.mean()

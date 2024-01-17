@@ -17,8 +17,8 @@ def selfies_to_seq(selfies, voc):
     return torch.tensor(seq).float().cuda()
 
 
-def make_symmetric_selfies(seqs, voc):
-    padded_len = seqs.shape[1]
+def make_symmetric_selfies(seqs, voc, do_random=False):
+    padded_len = seqs.shape[1] + 10
     selfies_list = seq_to_selfies(seqs, voc)
 
     symmetric_selfies_list = []
@@ -27,7 +27,7 @@ def make_symmetric_selfies(seqs, voc):
         smile = sf.decoder(selfies)
 
         mol = Chem.MolFromSmiles(smile)
-        canonical_smiles = Chem.MolToSmiles(mol, isomericSmiles=False)
+        canonical_smiles = Chem.MolToSmiles(mol, isomericSmiles=False, doRandom=do_random)
         
         try:
             new_selfies = sf.encoder(canonical_smiles)
@@ -35,9 +35,8 @@ def make_symmetric_selfies(seqs, voc):
 
             new_seq = selfies_to_seq(new_selfies, voc)
             new_seq = torch.cat([new_seq, torch.zeros(padded_len-len(new_seq)).cuda()], dim=0)
-
         except:
-            new_seq = seqs[i]
+            new_seq = torch.cat([seqs[i], torch.zeros(padded_len-len(seqs[i])).cuda()], dim=0) 
             new_selfies = selfies
 
         symmetric_selfies_list.append(new_selfies)

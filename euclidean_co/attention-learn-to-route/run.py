@@ -18,6 +18,7 @@ from reinforce_baselines import NoBaseline, ExponentialBaseline, CriticBaseline,
 from nets.attention_model import AttentionModel
 from nets.pointer_network import PointerNetwork, CriticNetworkLSTM
 from utils import torch_load_cpu, load_problem
+from experience import Experience
 
 
 def run(opts):
@@ -38,7 +39,7 @@ def run(opts):
 
     if opts.wandb != 'disabled':
         if opts.il_coefficient > 0:
-            run_name = 'symrd_' + opts.method + '_' + opts.baseline + '_' + str(opts.seed)
+            run_name = 'symrd_' + opts.method + '_' + opts.transform_opt + '_' + opts.baseline + '_' + str(opts.seed)
         else:
             run_name = opts.method + '_' + opts.baseline + '_' + str(opts.seed)
         wandb.init(project='symrd_euclidean', 
@@ -178,6 +179,11 @@ def run(opts):
         print("Resuming after {}".format(epoch_resume))
         opts.epoch_start = epoch_resume + 1
 
+    if opts.experience_replay_size > 0:
+        experience = Experience(opts.epoch_size, opts.device, opts.reward_prioritized)
+    else:
+        experience = None
+
     if opts.eval_only:
         validate(model, val_dataset, opts)
     else:
@@ -191,7 +197,8 @@ def run(opts):
                 val_dataset,
                 problem,
                 tb_logger,
-                opts
+                opts,
+                experience
             )
 
     if opts.wandb != 'disabled':

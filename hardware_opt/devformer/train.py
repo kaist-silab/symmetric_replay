@@ -207,7 +207,6 @@ def train_batch(
 
     # Calculate loss
     reinforce_loss = ((cost - bl_val) * log_likelihood).mean()
-    # reinforce_loss = ((cost - bl_val - 0.01 * entropy.sum(-1).clone().detach()) * log_likelihood).mean()  # MaxEnt AM
     loss = reinforce_loss + bl_loss
 
     # Perform backward pass and optimization step
@@ -217,7 +216,7 @@ def train_batch(
     grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
     optimizer.step()
 
-    ############################### [SymRD] ###################################
+    ############################### [SRT] ###################################
     if opts.distil_mask == 'bl' and opts.baseline != 'no_baseline':
         distil_mask = (cost < bl_val.mean()).view(-1)
     else:
@@ -261,7 +260,6 @@ def train_batch_ppo(
     # Exploration
     with torch.no_grad():
         cost, log_likelihood_old,pi = model(x,return_pi = True)
-    # cost, log_likelihood, entropy = model(x, return_entropy=True)  # MaxEnt AM
 
     # Evaluate baseline, get baseline loss if any (only for critic)
 
@@ -287,7 +285,7 @@ def train_batch_ppo(
         grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
         optimizer.step()
 
-    ############################### [SymRD] ###################################
+    ############################### [SRT] ###################################
     if opts.il_coefficient > 0 and (step + 1) % opts.distil_every == 0:
         if opts.distil_mask == 'bl' and opts.baseline != 'no_baseline':
             distil_mask = (cost < bl_val.mean()).view(-1)
@@ -345,7 +343,7 @@ def train_batch_gfn(
         _, log_likelihood,logZ = model(x,action=pi,gfn=True)
 
         forward_flow = log_likelihood + logZ.view(-1)
-        backward_flow = math.log(1/(math.factorial(pi.shape[0]))) - (cost)*opts.beta
+        backward_flow = math.log(1/(math.factorial(pi.shape[1]))) - (cost)*opts.beta
         
         reinforce_loss = torch.pow(forward_flow-backward_flow, 2).mean()
         loss = reinforce_loss + bl_loss

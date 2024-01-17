@@ -39,6 +39,10 @@ def get_options(args=None):
     
     # inner loop training (PPO & GFN)
     parser.add_argument('--k_step', type=int, default=2, help='Number of instances per epoch during training')
+    
+    
+    parser.add_argument('--experience_replay_size', type=int, default=0, help='Number of Experience Replay')
+    parser.add_argument('--reward_prioritized', action='store_true', help='Reward prioritized ER')
 
 
     # Training

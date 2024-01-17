@@ -128,6 +128,25 @@ class AttentionModel(nn.Module):
         if temp is not None:  # Do not change temperature if not provided
             self.temp = temp
 
+    def forward_first(self, input):
+        if self.checkpoint_encoder and self.training:  # Only checkpoint if we need gradients
+            embeddings, _ = checkpoint(self.embedder, self._init_embed(input))
+        else:
+            embeddings, _ = self.embedder(self._init_embed(input))
+
+        state = self.problem.make_state(input)
+
+        # Compute keys, values for the glimpse and keys for the logits once as they can be reused in every step
+        fixed = self._precompute(embeddings)
+
+        batch_size = state.ids.size(0)
+
+        # Perform the first decoding step
+        log_p, _ = self._get_log_p(fixed, state)
+
+        return log_p
+
+
     def forward(self, input, return_pi=False, action=None, sub_len=0, return_entropy=False,gfn=False):
         """
         :param input: (batch_size, graph_size, node_dim) input node features or dictionary with multiple tensors
@@ -179,7 +198,7 @@ class AttentionModel(nn.Module):
 
         ############################### [SymRD] ###################################
         if return_entropy:
-            return cost, ll, entropy
+            return cost, ll, _
 
         if return_pi:
             return cost, ll, pi

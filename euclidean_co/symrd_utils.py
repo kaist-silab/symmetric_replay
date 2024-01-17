@@ -4,16 +4,28 @@ import random
 from nets.attention_model import set_decode_type
 
 
-def symmetric_action(action, opts):
+def symmetric_action(action, opts, x=None, model=None):
     batch_size, action_len = action.shape
     
     if opts.problem == 'tsp':
         # k-cyclic permutation
-        permuted_indice = torch.arange(action_len).repeat(batch_size, 1)
+        permuted_indice = torch.arange(action_len).repeat(batch_size, 1).to(x.device)
         
         if opts.transform_opt == 'identical':
             sym_action = action.flip(dims=[-1])
             # start = torch.ones(size=(batch_size, 1)).int() + 1
+        elif opts.transform_opt == 'adversarial':
+            with torch.no_grad():
+                log_p1 = model.forward_first(x)
+            # print(log_p1.shape)
+            # print(log_p1[0, 0, :].argmin(), log_p1[0, 0, :].argmax(), log_p1[0, 0, :].min(), log_p1[0, 0, :].max())
+            # print(action[0])
+            # print(log_p1[0, 0, action[0, 0]])
+            sym_action = action.flip(dims=[-1])
+            start = log_p1[:, 0, :].argmin(dim=-1).view(-1, 1)
+            permuted = (permuted_indice + start) % action_len
+            permuted = torch.gather(action, dim=-1, index=permuted.to(opts.device))
+            # print(permuted[0])
         else:
             start = torch.randint(action_len - 1, size=(batch_size, 1)) + 1
         

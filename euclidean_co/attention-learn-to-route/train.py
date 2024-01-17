@@ -71,7 +71,7 @@ def clip_grad_norms(param_groups, max_norm=math.inf):
     return grad_norms, grad_norms_clipped
 
 
-def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, problem, tb_logger, opts):
+def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, problem, tb_logger, opts, experience=None):
     print("Start train epoch {}, lr={} for run {}".format(epoch, optimizer.param_groups[0]['lr'], opts.run_name))
     step = epoch * (opts.epoch_size // opts.batch_size)
     
@@ -102,7 +102,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     for batch_id, batch in enumerate(tqdm(training_dataloader, disable=opts.no_progress_bar)):
 
-        ############################### [SymRD] ###################################
+        ############################### [SRT] ###################################
         if opts.baseline is None or opts.baseline in ['critic', 'no_baseline']:
             cum_samples += opts.batch_size  # batch.shape[0]
         elif opts.baseline == 'rollout':
@@ -110,7 +110,7 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
                 cum_samples += opts.batch_size * 2 
             else:
                 cum_samples += opts.batch_size  # batch['data'].shape[0]
-        ###########################################################################
+        #########################################################################
 
 
         if opts.method == 'gfn':
@@ -150,7 +150,8 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
                 batch,
                 tb_logger,
                 cum_samples,
-                opts
+                opts,
+                experience=None
             )
 
         step += 1
@@ -204,7 +205,7 @@ def distill_model(model, optimizer, opts, x, pi=None, ll_clip=0.):
         else:
             if opts.problem == 'tsp':
                 new_x = x.repeat(opts.sym_width, 1, 1)
-                action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts)
+                action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts, x, model)
 
             elif opts.problem == 'cvrp':
                 new_x = {
@@ -243,23 +244,44 @@ def train_batch(
         batch,
         tb_logger,
         cum_samples,
-        opts
+        opts,
+        experience=None
 ):
     x, bl_val = baseline.unwrap_batch(batch)
     x = move_to(x, opts.device)
     bl_val = move_to(bl_val, opts.device) if bl_val is not None else None
 
     # Evaluate model, get costs and log probabilities
-    cost, log_likelihood = model(x)
-    # cost, log_likelihood, entropy = model(x, return_entropy=True)  # MaxEnt AM
+    cost, log_likelihood, pi = model(x, return_pi=True)
+
+    if experience is not None:
+        for exp in zip(x, pi, cost.data.cpu().numpy(), log_likelihood.data.cpu().numpy()):
+            experience.add_experience(exp)
 
     # Evaluate baseline, get baseline loss if any (only for critic)
     bl_val, bl_loss = baseline.eval(x, cost) if bl_val is None else (bl_val, 0)
 
     # Calculate loss
     reinforce_loss = ((cost - bl_val) * log_likelihood).mean()
-    # reinforce_loss = ((cost - bl_val - 0.01 * entropy.sum(-1).clone().detach()) * log_likelihood).mean()  # MaxEnt AM
     loss = reinforce_loss + bl_loss
+
+    # Experience buffer
+    # if experience is not None and len(experience.memory) > opts.experience_replay_size:
+    #     exp_x, exp_pi, exp_cost, prev_ll = experience.sample(opts.experience_replay_size)
+    #     _, exp_ll = model(exp_x, action=exp_pi, sub_len=0)
+    #     exp_bl_val, _ = baseline.eval(exp_x, exp_cost)  # use critic baseline
+    #     weight = (torch.exp(exp_ll-prev_ll)).to(opts.device)
+    #     # weight = torch.clamp((torch.exp(exp_ll-prev_ll)).to(opts.device), 0, 0.001) # 0.0001
+    #     # print(exp_ll-prev_ll, weight)
+    #     exp_loss = (weight*((exp_cost - exp_bl_val.detach()) * exp_ll)).mean()
+    #     # print(exp_loss)
+    #     loss += exp_loss
+
+    # Ablation (RL loss)
+    # sym_pi = symmetric_action(pi.clone(), opts)
+    # _, sym_ll = model(x, action=sym_pi, sub_len=0)
+    # weight = (torch.exp(sym_ll-log_likelihood.detach())).to(opts.device)
+    # loss += (weight*((cost - bl_val) * sym_ll)).mean()
 
     # Perform backward pass and optimization step
     optimizer.zero_grad()
@@ -268,7 +290,7 @@ def train_batch(
     grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
     optimizer.step()
 
-    ############################### [SymRD] ###################################
+    ############################### [SRT] ###################################
     if opts.il_coefficient > 0 and (step + 1) % opts.distil_every == 0:
         distill_loss = distill_model(model, optimizer, opts, x)
     else:
@@ -382,7 +404,7 @@ def train_batch_gfn(
         _, log_likelihood,logZ = model(x,action=pi,gfn=True)
 
         forward_flow = log_likelihood + logZ.view(-1)
-        backward_flow = math.log(1/(2*pi.shape[0])) - (cost-bl_val)*opts.beta
+        backward_flow = math.log(1/(2*pi.shape[1])) - (cost-bl_val)*opts.beta
         
         reinforce_loss = torch.pow(forward_flow-backward_flow, 2).mean()
         loss = reinforce_loss + bl_loss

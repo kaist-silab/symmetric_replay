@@ -39,7 +39,7 @@ def run(opts):
 
     if opts.wandb != 'disabled':
         if opts.il_coefficient > 0:
-            run_name = 'symrd_' + opts.method + '_' + opts.transform_opt + '_' + opts.baseline + '_' + str(opts.seed)
+            run_name = 'symrd_' + opts.method + '_' + opts.transform_opt + '_' + opts.baseline + '_' + opts.run_name + '_' + str(opts.seed)
         else:
             run_name = opts.method + '_' + opts.baseline + '_' + str(opts.seed)
         wandb.init(project='symrd_euclidean', 

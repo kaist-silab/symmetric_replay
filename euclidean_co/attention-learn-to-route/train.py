@@ -16,7 +16,7 @@ from utils import move_to
 
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-from symrd_utils import rollout_for_self_distillation, symmetric_action
+from symrd_utils import rollout_for_self_distillation, symmetric_action, get_sym_actions_and_log_probs
 
 
 def get_inner_model(model):
@@ -191,11 +191,39 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
     lr_scheduler.step()
 
 
-def distill_model(model, optimizer, opts, x, pi=None, ll_clip=0.):
+def weighted_replay(model, optimizer, opts, x, pi=None, ll_clip=0., rt_ll_diff=False):
+    new_pi = rollout_for_self_distillation(model, opts, x)
+    tot_ll_diff = 0.
+
+    for _ in range(opts.distil_loop):
+        sub_len = random.randint(1, 10)
+        ll_diff, w, log_likelihood_IL = get_sym_actions_and_log_probs(new_pi, opts, x, model, sub_len=sub_len, beta=opts.inverse_temp)
+        
+        tot_ll_diff += ll_diff
+        # log_likelihood_IL = (w * sym_ll).sum(dim=1)
+
+    if ll_clip > 0:
+        log_likelihood_IL = torch.clamp(log_likelihood_IL, -ll_clip, ll_clip)
+
+    il_loss = (-1) * opts.il_coefficient * log_likelihood_IL.mean()
+    
+    optimizer.zero_grad()
+    il_loss.backward()
+
+    # Clip gradient norms and get (clipped) gradient norms for logging
+    grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
+    optimizer.step()
+
+    return il_loss, tot_ll_diff / opts.distil_loop
+
+
+def distill_model(model, optimizer, opts, x, pi=None, ll_clip=0., rt_ll_diff=False):
     if pi is None:
         new_pi = rollout_for_self_distillation(model, opts, x)
     else:
         new_pi = pi.clone()
+
+    tot_ll_diff = 0.
     
     for _ in range(opts.distil_loop):
         sub_len = random.randint(1, 10)
@@ -205,7 +233,9 @@ def distill_model(model, optimizer, opts, x, pi=None, ll_clip=0.):
         else:
             if opts.problem == 'tsp':
                 new_x = x.repeat(opts.sym_width, 1, 1)
-                action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts, new_x, model)
+                action, ll_diff = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts, new_x, model)
+                
+                tot_ll_diff += ll_diff
 
             elif opts.problem == 'cvrp':
                 new_x = {
@@ -231,7 +261,10 @@ def distill_model(model, optimizer, opts, x, pi=None, ll_clip=0.):
         grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
         optimizer.step()
 
-    return il_loss
+    if rt_ll_diff:
+        return il_loss, tot_ll_diff / opts.distil_loop
+    else:
+        return il_loss
 
 
 def train_batch(
@@ -292,14 +325,19 @@ def train_batch(
 
     ############################### [SRT] ###################################
     if opts.il_coefficient > 0 and (step + 1) % opts.distil_every == 0:
-        distill_loss = distill_model(model, optimizer, opts, x)
+        if opts.transform_opt == 'weighted':
+            distill_loss, avg_ll_diff = weighted_replay(model, optimizer, opts, x)
+        else:
+            distill_loss, avg_ll_diff = distill_model(model, optimizer, opts, x, rt_ll_diff=True)
     else:
         distill_loss = 0
+        avg_ll_diff = 0.
 
     wandb_log_dict = {'avg_cost': cost.mean().item(),
                     'cum_samples': cum_samples,
                     'rl_loss': reinforce_loss.item(),
                     'il_loss': distill_loss, 
+                    'll_diff': avg_ll_diff,
                     'nll': -log_likelihood.mean().item(),
                     'epoch': epoch,
                     'lr': optimizer.param_groups[0]['lr'],
@@ -360,6 +398,12 @@ def train_batch_ppo(
         distill_loss = distill_model(model, optimizer, opts, x, ll_clip=ratio.mean().item())
     else:
         distill_loss = 0
+
+    # distil_mask = (cost < bl_val.mean()).view(-1)
+    # if opts.il_coefficient > 0 and (step + 1) % opts.distil_every == 0:
+    #     distill_loss = distill_model(model, optimizer, opts, x[distil_mask], pi[distil_mask])
+    # else:
+    #     distill_loss = 0
 
     wandb_log_dict = {'avg_cost': cost.mean().item(),
                     'cum_samples': cum_samples,

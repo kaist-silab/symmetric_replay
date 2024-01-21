@@ -4,6 +4,58 @@ import random
 from nets.attention_model import set_decode_type
 
 
+def get_sym_actions_and_log_probs(action, opts, x=None, model=None, sub_len=0, beta=1.0):
+    batch_size, action_len = action.shape
+    assert opts.problem == 'tsp' and opts.transform_opt == 'weighted'
+    
+    # k-cyclic permutation
+    permuted_indice = torch.arange(action_len).repeat(batch_size, 1).to(x.device)
+    
+    new_x = x.repeat(100, 1, 1)
+    pi = action.repeat(100, 1)
+
+    start = torch.arange(100).repeat_interleave(batch_size).to(x.device)
+    permuted = (permuted_indice.repeat(100, 1) + start.view(-1, 1)) % action_len
+    permuted = torch.gather(pi, dim=-1, index=permuted.to(x.device))
+    permuted[50*batch_size:, :] = permuted[50*batch_size:, :].flip(dims=[-1])
+
+    with torch.no_grad():
+        _, sym_ll = model(new_x, action=permuted, sub_len=0)
+
+    permuted = permuted.reshape(100, -1, action_len)
+    sym_ll = sym_ll.reshape(100, -1).detach()
+    min_ll, _ = sym_ll.min(dim=0)
+    sum_ll = sym_ll.sum(dim=0)
+
+    ll_diff = (sym_ll.mean(dim=0) - min_ll).mean()
+
+    new_x = x.repeat(10, 1, 1)
+    pi = action.repeat(10, 1)
+
+    # start = torch.arange(10).repeat_interleave(batch_size).to(x.device)
+    start = torch.randint(action_len - 1, size=(batch_size, 10)).to(x.device) + 1
+    permuted = (permuted_indice.repeat(10, 1) + start.view(-1, 1)) % action_len
+    permuted = torch.gather(pi, dim=-1, index=permuted.to(x.device))
+    # permuted[50*batch_size:, :] = permuted[50*batch_size:, :].flip(dims=[-1])
+
+    # with torch.no_grad():
+    #     _, sym_ll = model(new_x, action=permuted, sub_len=0)
+    # print(new_x.shape, permuted.shape, sub_len)
+    _, sym_ll, sub_ll1, log_likelihood_IL, _ = model(new_x, action=permuted, sub_len=opts.graph_size - sub_len)
+    # print(sym_ll.shape, sub_ll1.shape, log_likelihood_IL.shape)
+
+    sym_ll = (sub_ll1 + log_likelihood_IL).reshape(10, -1).detach()
+    min_ll, _ = sym_ll.min(dim=0)
+    sum_ll = sym_ll.sum(dim=0)
+
+    weights = ((-1) * beta * sym_ll).exp() / (((-1) * beta * sum_ll).exp() + 1e-8)
+    # print(weights.min(dim=1), weights.sum(dim=1))
+    # print(sym_ll[0, 0])
+
+    # return permuted.reshape(100, -1, action_len), sym_ll.reshape(100, -1)
+    return ll_diff, weights, log_likelihood_IL.reshape(10, -1)
+
+
 def symmetric_action(action, opts, x=None, model=None):
     batch_size, action_len = action.shape
     
@@ -14,27 +66,113 @@ def symmetric_action(action, opts, x=None, model=None):
         if opts.transform_opt == 'identical':
             sym_action = action.flip(dims=[-1])
             # start = torch.ones(size=(batch_size, 1)).int() + 1
-        elif opts.transform_opt == 'adversarial':
+        elif opts.transform_opt in ['adv_all', 'adv_sample']:
+            new_x = x.repeat(100, 1, 1)
+            pi = action.repeat(100, 1)
+
+            start = torch.arange(100).repeat_interleave(batch_size).to(x.device)
+            permuted = (permuted_indice.repeat(100, 1) + start.view(-1, 1)) % action_len
+            permuted = torch.gather(pi, dim=-1, index=permuted.to(x.device))
+            permuted[50*batch_size:, :] = permuted[50*batch_size:, :].flip(dims=[-1])
+
             with torch.no_grad():
-                log_p1 = model.forward_first(x)
-            # print(log_p1.shape)
-            # print(log_p1[0, 0, :].argmin(), log_p1[0, 0, :].argmax(), log_p1[0, 0, :].min(), log_p1[0, 0, :].max())
-            # print(action[0])
-            # print(log_p1[0, 0, action[0, 0]])
-            # sym_action = action.flip(dims=[-1])
-            start_prob = ((-log_p1[:, 0, :]).exp() / (-log_p1[:, 0, :]).exp().sum(dim=1)[:, None])
-            start = torch.multinomial(start_prob,1)
-            # start = log_p1[:, 0, :].argmin(dim=-1).view(-1, 1)
-            permuted = (permuted_indice + start) % action_len
-            permuted = torch.gather(action, dim=-1, index=permuted.to(opts.device))
+                _, sym_ll = model(new_x, action=permuted, sub_len=0)
+
+            sym_ll = sym_ll.reshape(100, -1)
+            min_ll, idx = sym_ll.min(dim=0)
+
+            if opts.transform_opt == 'adv_sample':
+                # print((-1) * opts.inverse_temp * sym_ll[0, 0])
+                nll = torch.clamp((-1) * opts.inverse_temp * sym_ll, 0, 50)
+                # print(nll.min(dim=0), nll.max(dim=0), nll.sum(dim=0))
+                weights = nll.exp() / ((nll.exp()).sum(dim=0) + 1e-8)
+                # print(weights.min(dim=0), weights.max(dim=0), weights.sum(dim=0))
+                # prob = ((-sym_ll[:, 0, :]).exp() / (-log_p1[:, 0, :]).exp().sum(dim=1)[:, None])
+                idx = torch.multinomial(weights, 1).view(-1)
             
-            if torch.rand(1) >= 0.5:
-                sym_action = permuted
-            else:  # flipping
-                sym_action = permuted.flip(dims=[-1])
-            # print(permuted[0])
+            permuted = permuted.reshape(100, -1, action_len)
+            sym_action = permuted[idx, torch.arange(permuted.size(1))]
+
+            return sym_action, (sym_ll.mean(dim=0) - min_ll).mean()
+        # elif opts.transform_opt == 'adv':
+        #     new_x = x.repeat(49, 1, 1)
+        #     pi = action.repeat(49, 1)
+
+        #     start = torch.arange(49).repeat_interleave(batch_size).to(x.device) + 1
+        #     permuted = (permuted_indice.repeat(49, 1) + start.view(-1, 1)) % action_len
+        #     permuted = torch.gather(pi, dim=-1, index=permuted.to(x.device))
+
+        #     with torch.no_grad():
+        #         _, sym_ll = model(new_x, action=permuted, sub_len=0)
+
+        #     idx = sym_ll.reshape(49, -1).argmin(dim=0)
+        #     permuted = permuted.reshape(49, -1, action_len)
+        #     sym_action = permuted[idx, torch.arange(permuted.size(1))]
+            
+        #     return sym_action, (sym_ll.mean(dim=0) - min_ll).mean()
+        # elif opts.transform_opt == 'weighted':
+        #     new_x = x.repeat(100, 1, 1)
+        #     pi = action.repeat(100, 1)
+
+        #     start = torch.arange(100).repeat_interleave(batch_size).to(x.device)
+        #     permuted = (permuted_indice.repeat(100, 1) + start.view(-1, 1)) % action_len
+        #     permuted = torch.gather(pi, dim=-1, index=permuted.to(x.device))
+        #     permuted[50*batch_size:, :] = permuted[50*batch_size:, :].flip(dims=[-1])
+
+        #     with torch.no_grad():
+        #         _, sym_ll = model(new_x, action=permuted, sub_len=0)
+
+        #     permuted = permuted.reshape(100, -1, action_len)
+        #     sym_ll = sym_ll.reshape(100, -1).detach()
+        #     min_ll, _ = sym_ll.min(dim=0)
+        #     sum_ll = sym_ll.sum(dim=0)
+
+        #     weights = ((-1) * beta * sym_ll).exp() / (((-1) * beta * sum_ll).exp() + 1e-8)
+        #     print(weights.min(dim=1), weights.sum(dim=1))
+        #     print(sym_ll[0, 0])
+
+        #     return permuted, sym_ll.reshape(100, -1)
+        #     # return sym_action, (sym_ll.mean(dim=0) - min_ll).mean()
+        # elif opts.transform_opt == 'adversarial':
+        #     with torch.no_grad():
+        #         log_p1 = model.forward_first(x)
+        #     # print(log_p1.shape)
+        #     # print(log_p1[0, 0, :].argmin(), log_p1[0, 0, :].argmax(), log_p1[0, 0, :].min(), log_p1[0, 0, :].max())
+        #     # print(action[0])
+        #     # print(log_p1[0, 0, action[0, 0]])
+        #     # sym_action = action.flip(dims=[-1])
+        #     # node_prob = ((-log_p1[:, 0, :]).exp() / (-log_p1[:, 0, :]).exp().sum(dim=1)[:, None])
+        #     # node = torch.multinomial(node_prob, 1)
+        #     node = log_p1[:, 0, :].argmin(dim=-1).view(-1, 1)
+        #     # print(node[1])
+        #     start = (action == node.view(-1, 1)).nonzero()[:, 1]
+        #     # print(action[1])
+        #     # print(start[1])
+        #     # print(permuted_indice.shape, start.shape)
+        #     permuted = (permuted_indice + start[:, None]) % action_len
+        #     permuted = torch.gather(action, dim=-1, index=permuted.to(opts.device))
+            
+        #     if torch.rand(1) >= 0.5:
+        #         sym_action = permuted
+        #     else:  # flipping
+        #         sym_action = permuted.flip(dims=[-1])
+        #     # print(permuted[0])
         else:
-            start = torch.randint(action_len - 1, size=(batch_size, 1)) + 1
+            # to measure differences of symmetric likelihoods
+            new_x = x.repeat(100, 1, 1)
+            pi = action.repeat(100, 1)
+
+            start = torch.arange(100).repeat_interleave(batch_size).to(x.device)
+            permuted = (permuted_indice.repeat(100, 1) + start.view(-1, 1)) % action_len
+            permuted = torch.gather(pi, dim=-1, index=permuted.to(x.device))
+            permuted[50*batch_size:, :] = permuted[50*batch_size:, :].flip(dims=[-1])
+
+            with torch.no_grad():
+                _, sym_ll = model(new_x, action=permuted, sub_len=0)
+            
+            min_ll, _ = sym_ll.reshape(100, -1).min(dim=0)
+
+            start = torch.randint(action_len - 1, size=(batch_size, 1)).to(x.device) + 1
         
             random_permuted = (permuted_indice + start) % action_len
             permuted = torch.gather(action, dim=-1, index=random_permuted.to(opts.device))
@@ -43,6 +181,8 @@ def symmetric_action(action, opts, x=None, model=None):
                 sym_action = permuted
             else:  # flipping
                 sym_action = permuted.flip(dims=[-1])
+
+            return sym_action, (sym_ll.mean(dim=0) - min_ll).mean()
 
     elif opts.problem == 'cvrp':
         # action does not start with 0

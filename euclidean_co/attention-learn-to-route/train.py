@@ -312,6 +312,7 @@ def train_batch(
     #     loss += exp_loss
 
     # Ablation (RL loss)
+    avg_ll_diff = 0.
     if opts.rl_ablation:
         sym_pi, avg_ll_diff = symmetric_action(pi.clone(), opts, x=x, model=model)
         _, sym_ll = model(x, action=sym_pi, sub_len=0)
@@ -333,7 +334,6 @@ def train_batch(
             distill_loss, avg_ll_diff = distill_model(model, optimizer, opts, x, rt_ll_diff=True)
     else:
         distill_loss = 0
-        avg_ll_diff = 0.
 
     wandb_log_dict = {'avg_cost': cost.mean().item(),
                     'cum_samples': cum_samples,

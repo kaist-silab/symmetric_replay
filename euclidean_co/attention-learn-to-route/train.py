@@ -285,7 +285,8 @@ def train_batch(
     bl_val = move_to(bl_val, opts.device) if bl_val is not None else None
 
     # Evaluate model, get costs and log probabilities
-    cost, log_likelihood, pi = model(x, return_pi=True)
+    # cost, log_likelihood, pi = model(x, return_pi=True)
+    cost, log_likelihood, pi, trj_entropy = model(x, return_pi=True, return_entropy=True)
 
     if experience is not None:
         for exp in zip(x, pi, cost.data.cpu().numpy(), log_likelihood.data.cpu().numpy()):
@@ -311,10 +312,11 @@ def train_batch(
     #     loss += exp_loss
 
     # Ablation (RL loss)
-    # sym_pi = symmetric_action(pi.clone(), opts)
-    # _, sym_ll = model(x, action=sym_pi, sub_len=0)
-    # weight = (torch.exp(sym_ll-log_likelihood.detach())).to(opts.device)
-    # loss += (weight*((cost - bl_val) * sym_ll)).mean()
+    if opts.rl_ablation:
+        sym_pi, avg_ll_diff = symmetric_action(pi.clone(), opts, x=x, model=model)
+        _, sym_ll = model(x, action=sym_pi, sub_len=0)
+        weight = (torch.exp(sym_ll-log_likelihood.detach())).to(opts.device)
+        loss += (weight*((cost - bl_val) * sym_ll)).mean()
 
     # Perform backward pass and optimization step
     optimizer.zero_grad()
@@ -338,6 +340,7 @@ def train_batch(
                     'rl_loss': reinforce_loss.item(),
                     'il_loss': distill_loss, 
                     'll_diff': avg_ll_diff,
+                    'trj_ent': trj_entropy.mean().item(),
                     'nll': -log_likelihood.mean().item(),
                     'epoch': epoch,
                     'lr': optimizer.param_groups[0]['lr'],

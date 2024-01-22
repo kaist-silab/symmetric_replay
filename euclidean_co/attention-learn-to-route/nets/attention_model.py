@@ -166,8 +166,8 @@ class AttentionModel(nn.Module):
 
         ############################### [SymRD] ###################################
         # _log_p, pi = self._inner(input, embeddings)
-
-        _log_p, pi = self._inner(input, embeddings,action)
+        # _log_p, pi = self._inner(input, embeddings,action)
+        _log_p, pi, trj_entropy = self._inner(input, embeddings,action,return_entropy=True)
 
         if action is not None:
             if sub_len > 0:
@@ -193,12 +193,10 @@ class AttentionModel(nn.Module):
         # Log likelyhood is calculated within the model since returning it per action does not work well with
         # DataParallel since sequences can be of different lengths
         ll = self._calc_log_likelihood(_log_p, pi, mask)
-        if return_pi:
-            return cost, ll, pi
 
         ############################### [SymRD] ###################################
         if return_entropy:
-            return cost, ll, _
+            return cost, ll, pi, trj_entropy
 
         if return_pi:
             return cost, ll, pi
@@ -355,7 +353,7 @@ class AttentionModel(nn.Module):
             # Collect output of step
             outputs.append(log_p[:, 0, :])
             sequences.append(selected)
-            entropy.append(torch.nansum((-1) * log_p.exp()[:, 0, :] * log_p[:, 0, :], dim=-1))
+            entropy.append((torch.nansum((-1) * log_p.exp()[:, 0, :] * log_p[:, 0, :], dim=-1)).detach())
 
             i += 1
 

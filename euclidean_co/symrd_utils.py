@@ -61,7 +61,7 @@ def symmetric_action(action, opts, x=None, model=None):
     
     if opts.problem == 'tsp':
         # k-cyclic permutation
-        permuted_indice = torch.arange(action_len).repeat(batch_size, 1).to(x.device)
+        permuted_indice = torch.arange(action_len).repeat(batch_size, 1).to(opts.device)
         
         if opts.transform_opt == 'identical':
             sym_action = action.flip(dims=[-1])
@@ -70,9 +70,9 @@ def symmetric_action(action, opts, x=None, model=None):
             new_x = x.repeat(100, 1, 1)
             pi = action.repeat(100, 1)
 
-            start = torch.arange(100).repeat_interleave(batch_size).to(x.device)
+            start = torch.arange(100).repeat_interleave(batch_size).to(opts.device)
             permuted = (permuted_indice.repeat(100, 1) + start.view(-1, 1)) % action_len
-            permuted = torch.gather(pi, dim=-1, index=permuted.to(x.device))
+            permuted = torch.gather(pi, dim=-1, index=permuted.to(opts.device))
             permuted[50*batch_size:, :] = permuted[50*batch_size:, :].flip(dims=[-1])
 
             with torch.no_grad():

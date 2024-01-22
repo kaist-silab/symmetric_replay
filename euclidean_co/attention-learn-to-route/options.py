@@ -96,6 +96,7 @@ def get_options(args=None):
     parser.add_argument('--transform_opt', default='uniform', help="Symmetric transform, 'uniform' (default) or 'identical'")
     parser.add_argument('--inverse_temp', type=float, default=1., help='Inverse temperature for symmetric weight')
     parser.add_argument('--sym_width', type=int, default=1, help='Symmetric width, default 1')
+    parser.add_argument('--rl_ablation', action='store_true')
     ###########################################################################
 
     parser.add_argument('--wandb', type=str, default="disabled", choices=["online", "offline", "disabled"])

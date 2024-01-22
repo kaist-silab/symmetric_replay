@@ -83,9 +83,9 @@ def symmetric_action(action, opts, x=None, model=None):
 
             if opts.transform_opt == 'adv_sample':
                 # print((-1) * opts.inverse_temp * sym_ll[0, 0])
-                nll = torch.clamp((-1) * opts.inverse_temp * sym_ll, 0, 50)
+                exp = (torch.clamp((-1) * opts.inverse_temp * sym_ll, 0, 500)).double().exp()
                 # print(nll.min(dim=0), nll.max(dim=0), nll.sum(dim=0))
-                weights = nll.exp() / ((nll.exp()).sum(dim=0) + 1e-8)
+                weights = exp / (exp.sum(dim=0) + 1e-8)
                 # print(weights.min(dim=0), weights.max(dim=0), weights.sum(dim=0))
                 # prob = ((-sym_ll[:, 0, :]).exp() / (-log_p1[:, 0, :]).exp().sum(dim=1)[:, None])
                 idx = torch.multinomial(weights, 1).view(-1)

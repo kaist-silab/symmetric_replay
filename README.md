@@ -1,6 +1,6 @@
-# Enhancing Sample Efficiency in Black-box Combinatorial Optimization via Symmetric Replay Training
+# Symmetric Replay Training: Enhancing Sample Efficiency in Deep Reinforcement Learning for Combinatorial Optimization
 
-This reporsitory provided implemented codes for the paper, Enhancing Sample Efficiency in Black-box Combinatorial Optimization via Symmetric Replay Training. 
+This reporsitory provided implemented codes for the paper, Symmetric Replay Training: Enhancing Sample Efficiency in Deep Reinforcement Learning for Combinatorial Optimization.
 The codes are implemented based on the original DRL methods for each task; see the references and original codes for details.
 
 
@@ -111,3 +111,5 @@ This work is done based on the following papers.
 (code: https://github.com/yd-kwon/MatNet)
 - [Sample Efficiency Matters: A Benchmark for Practical Molecular Optimization (NeurIPS, 2022)](https://arxiv.org/abs/2206.12411)
 (code: https://github.com/wenhao-gao/mol_opt)
+- [DevFormer: A Symmetric Transformer for Context-Aware Device Placement (ICML, 2023)](https://arxiv.org/abs/2205.13225)
+(code: https://github.com/kaist-silab/devformer)

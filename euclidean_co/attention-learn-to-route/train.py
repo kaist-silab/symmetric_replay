@@ -16,7 +16,7 @@ from utils import move_to
 
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-from symrd_utils import rollout_for_self_distillation, symmetric_action, get_sym_actions_and_log_probs, calc_ll_difference
+from symrd_utils import rollout_for_self_distillation, symmetric_action, calc_ll_difference
 
 
 def get_inner_model(model):
@@ -189,32 +189,6 @@ def train_epoch(model, optimizer, baseline, lr_scheduler, epoch, val_dataset, pr
 
     # lr_scheduler should be called at end of epoch
     lr_scheduler.step()
-
-
-def weighted_replay(model, optimizer, opts, x, pi=None, ll_clip=0., rt_ll_diff=False):
-    new_pi = rollout_for_self_distillation(model, opts, x)
-    tot_ll_diff = 0.
-
-    for _ in range(opts.distil_loop):
-        sub_len = random.randint(1, 10)
-        ll_diff, w, log_likelihood_IL = get_sym_actions_and_log_probs(new_pi, opts, x, model, sub_len=sub_len, beta=opts.inverse_temp)
-        
-        tot_ll_diff += ll_diff
-        # log_likelihood_IL = (w * sym_ll).sum(dim=1)
-
-    if ll_clip > 0:
-        log_likelihood_IL = torch.clamp(log_likelihood_IL, -ll_clip, ll_clip)
-
-    il_loss = (-1) * opts.il_coefficient * log_likelihood_IL.mean()
-    
-    optimizer.zero_grad()
-    il_loss.backward()
-
-    # Clip gradient norms and get (clipped) gradient norms for logging
-    grad_norms = clip_grad_norms(optimizer.param_groups, opts.max_grad_norm)
-    optimizer.step()
-
-    return il_loss, tot_ll_diff / opts.distil_loop
 
 
 def distill_model(model, optimizer, opts, x, pi=None, ll_clip=0., rt_ll_diff=False):

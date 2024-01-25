@@ -16,7 +16,7 @@ from utils import move_to
 
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-from symrd_utils import rollout_for_self_distillation, symmetric_action, get_sym_actions_and_log_probs
+from symrd_utils import rollout_for_self_distillation, symmetric_action, get_sym_actions_and_log_probs, calc_ll_difference
 
 
 def get_inner_model(model):
@@ -233,7 +233,11 @@ def distill_model(model, optimizer, opts, x, pi=None, ll_clip=0., rt_ll_diff=Fal
         else:
             if opts.problem == 'tsp':
                 new_x = x.repeat(opts.sym_width, 1, 1)
-                action, ll_diff = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts, new_x, model)
+                if opts.transform_opt.startswith('adv'):
+                    action, ll_diff = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts, new_x, model)
+                else:
+                    ll_diff = calc_ll_difference(pi, x, model)
+                    action = symmetric_action(new_pi.repeat(opts.sym_width, 1), opts, new_x, model)
                 
                 tot_ll_diff += ll_diff
 
@@ -314,7 +318,9 @@ def train_batch(
     # Ablation (RL loss)
     avg_ll_diff = 0.
     if opts.rl_ablation:
-        sym_pi, avg_ll_diff = symmetric_action(pi.clone(), opts, x=x, model=model)
+        avg_ll_diff = calc_ll_difference(pi, x, model)
+        sym_pi = symmetric_action(pi.clone(), opts, x=x, model=model)
+        # sym_pi, ll = symmetric_action(pi.clone(), opts, x=x, model=model, return_ll=True)
         _, sym_ll = model(x, action=sym_pi, sub_len=0)
         weight = (torch.exp(sym_ll-log_likelihood.detach())).to(opts.device)
         loss += (weight*((cost - bl_val) * sym_ll)).mean()

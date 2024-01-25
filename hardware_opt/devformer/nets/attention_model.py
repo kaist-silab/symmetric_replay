@@ -174,12 +174,10 @@ class AttentionModel(nn.Module):
         # Log likelyhood is calculated within the model since returning it per action does not work well with
         # DataParallel since sequences can be of different lengths
         ll = self._calc_log_likelihood(_log_p, pi, mask)
-        if return_pi:
-            return cost, ll, pi
 
         ############################### [SymRD] ###################################
         if return_entropy:
-            return cost, ll, entropy
+            return cost, ll, _
 
         if return_pi:
             return cost, ll, pi

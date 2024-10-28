@@ -93,6 +93,16 @@ python run.py reinvent_selfies --task simple --oracle scaffold_hop
 ```
 Orther baselines are runable by changing method to `gflownet` (GFlowNet), `gflownet_al` (GFlowNet-AL), and `moldqn` (MolDQN).
 
+---
+## Citation
+```
+@InProceedings{kim24srt,
+  title = {Symmetric Replay Training: Enhancing Sample Efficiency in Deep Reinforcement Learning for Combinatorial Optimization},
+  author = {Kim, Hyeonah and Kim, Minsu and Ahn, Sungsoo and Park, Jinkyoo},
+  booktitle = {Proceedings of the 41st International Conference on Machine Learning},
+  year = {2024},
+}
+```
 
 
 ---
